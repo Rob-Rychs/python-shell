@@ -1,4 +1,4 @@
-# python-shell
+# python-shell [![Build status](https://ci.appveyor.com/api/projects/status/m8e3h53vvxg5wb2q?svg=true)](https://ci.appveyor.com/project/Almenon/python-shell)
 
 A simple way to run Python scripts from Node.js with basic but efficient inter-process communication and better error handling.
 
@@ -44,7 +44,7 @@ var PythonShell = require('python-shell');
 var options = {
   mode: 'text',
   pythonPath: 'path/to/python',
-  pythonOptions: ['-u'],
+  pythonOptions: ['-u'], // get print results in real-time
   scriptPath: 'path/to/my/scripts',
   args: ['value1', 'value2', 'value3']
 };
@@ -71,8 +71,11 @@ pyshell.on('message', function (message) {
 });
 
 // end the input stream and allow the process to exit
-pyshell.end(function (err) {
+pyshell.end(function (err,code,signal) {
   if (err) throw err;
+  console.log('The exit code was: ' + code);
+  console.log('The exit signal was: ' + signal);
+  console.log('finished');
   console.log('finished');
 });
 ```
@@ -208,6 +211,10 @@ Parses incoming data from the Python script written via stdout and emits `messag
 #### `.end(callback)`
 
 Closes the stdin stream, allowing the Python script to finish and exit. The optional callback is invoked when the process is terminated.
+
+#### `.terminate(signal)`
+
+Terminates the python script, the optional end callback is invoked if specified. A kill signal may be provided by `signal`, if `signal` is not specified SIGTERM is sent.
 
 #### event: `message`
 

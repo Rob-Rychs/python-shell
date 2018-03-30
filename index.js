@@ -2,6 +2,7 @@ var EventEmitter = require('events').EventEmitter;
 var path = require('path');
 var util = require('util');
 var spawn = require('child_process').spawn;
+var newline = require('os').EOL;
 
 function toArray(source) {
     if (typeof source === 'undefined' || source === null) {
@@ -83,17 +84,17 @@ var PythonShell = function (script, options) {
         terminateIfNeeded();
     })
 
-    this.childProcess.on('exit', function (code) {
+    this.childProcess.on('exit', function (code,signal) {
         self.exitCode = code;
+        self.exitSignal = signal;
         terminateIfNeeded();
     });
 
     function terminateIfNeeded() {
-        if (!self.stderrHasEnded || !self.stdoutHasEnded || self.exitCode == null) {
-            return;
-        }
+        if(!self.stderrHasEnded || !self.stdoutHasEnded || (self.exitCode == null && self.exitSignal == null)) return;
+
         var err;
-        if (errorData || self.exitCode !== 0) {
+        if (errorData || (self.exitCode && self.exitCode !== 0)) {
             if (errorData) {
                 err = self.parseError(errorData);
             } else {
@@ -111,10 +112,11 @@ var PythonShell = function (script, options) {
                 self.emit('error', err);
             }
         }
+
         self.terminated = true;
         self.emit('close');
-        self._endCallback && self._endCallback(err);
-    }
+        self._endCallback && self._endCallback(err,self.exitCode,self.exitSignal);
+    };
 };
 util.inherits(PythonShell, EventEmitter);
 
@@ -178,13 +180,13 @@ PythonShell.prototype.parseError = function (data) {
 
     if (/^Traceback/.test(text)) {
         // traceback data is available
-        var lines = (''+data).trim().split(/\n/g);
+        var lines = (''+data).trim().split(new RegExp(newline, 'g'));
         var exception = lines.pop();
         error = new Error(exception);
         error.traceback = data;
         // extend stack trace
-        error.stack += '\n    ----- Python Traceback -----\n  ';
-        error.stack += lines.slice(1).join('\n  ');
+        error.stack += newline+'    ----- Python Traceback -----'+newline+'  ';
+        error.stack += lines.slice(1).join(newline+'  ');
     } else {
         // otherwise, create a simpler error with stderr contents
         error = new Error(text);
@@ -201,7 +203,7 @@ PythonShell.prototype.parseError = function (data) {
  */
 PythonShell.prototype.send = function (message) {
     var data = this.formatter ? this.formatter(message) : message;
-    if (this.mode !== 'binary') data += '\n';
+    if (this.mode !== 'binary') data += newline;
     this.stdin.write(data);
     return this;
 };
@@ -214,7 +216,7 @@ PythonShell.prototype.send = function (message) {
  */
 PythonShell.prototype.receive = function (data) {
     var self = this;
-    var parts = (''+data).split(/\n/g);
+    var parts = (''+data).split(new RegExp(newline,'g'));
 
     if (parts.length === 1) {
         // an incomplete record, keep buffering
@@ -242,6 +244,16 @@ PythonShell.prototype.receive = function (data) {
 PythonShell.prototype.end = function (callback) {
     this.childProcess.stdin.end();
     this._endCallback = callback;
+    return this;
+};
+
+/**
+ * Closes the stdin stream, which should cause the process to finish its work and close
+ * @returns {PythonShell} The same instance for chaining calls
+ */
+PythonShell.prototype.terminate = function (signal) {
+    this.childProcess.kill(signal);
+    this.terminated = true;
     return this;
 };
 
